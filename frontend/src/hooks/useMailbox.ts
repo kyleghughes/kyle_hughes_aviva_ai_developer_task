@@ -191,50 +191,55 @@ export const useMailbox = () => {
    * @param item Work item selected by the user.
    * @returns Resolves when thread loading and any required AI analysis finish.
    */
-  const openItem = useCallback(async (item: Item): Promise<void> => {
-    setSelected(item);
-    setSelectedThread(null);
-    setThreadLoading(true);
+  const openItem = useCallback(
+    async (item: Item): Promise<void> => {
+      setSelected(item);
+      setSelectedThread(null);
+      setThreadLoading(true);
 
-    try {
-      const response = await getThread(item.thread_id);
-      setSelectedThread(response.thread);
-    } catch (error: unknown) {
-      setStatus(
-        error instanceof Error ? error.message : "Unable to load thread.",
-      );
-    } finally {
-      setThreadLoading(false);
-    }
+      try {
+        const response = await getThread(item.thread_id);
+        setSelectedThread(response.thread);
+      } catch (error: unknown) {
+        setStatus(
+          error instanceof Error ? error.message : "Unable to load thread.",
+        );
+      } finally {
+        setThreadLoading(false);
+      }
 
-    // Avoid making the same AI request every time the thread is opened.
-    if (item.email_type !== "action" || item.analysis_status === "analyzed") {
-      return;
-    }
+      // Avoid making the same AI request every time the thread is opened.
+      if (item.email_type !== "action" || item.analysis_status === "analyzed") {
+        return;
+      }
 
-    setAnalyzing(true);
-    setStatus("Analysing selected email with Ollama…");
+      setAnalyzing(true);
+      setStatus("Analysing selected email with Ollama…");
 
-    try {
-      const result = await analyzeWorkItem(item.thread_id);
+      try {
+        const result = await analyzeWorkItem(item.thread_id);
 
-      setSelected(result.work_item);
+        setSelected(result.work_item);
 
-      // Priority is assessed by AI, so refresh the current workload ordering.
-      // A high-priority item should immediately move to the top of the queue.
-      const targetPage = result.work_item.priority === "high" ? 1 : page;
-      await load(targetPage, search, filter);
-      setStatus(
-        result.work_item.priority === "high"
-          ? "AI assessed high priority — moved to top of workload"
-          : "AI decision support complete",
-      );
-    } catch (error: unknown) {
-      setStatus(error instanceof Error ? error.message : "AI analysis failed.");
-    } finally {
-      setAnalyzing(false);
-    }
-  }, [filter, load, page, search]);
+        // Priority is assessed by AI, so refresh the current workload ordering.
+        // A high-priority item should immediately move to the top of the queue.
+        const targetPage = result.work_item.priority === "high" ? 1 : page;
+        await load(targetPage, search, filter);
+        setStatus(
+          result.work_item.priority === "high"
+            ? "AI assessed high priority — moved to top of workload"
+            : "AI decision support complete",
+        );
+      } catch (error: unknown) {
+        setStatus(
+          error instanceof Error ? error.message : "AI analysis failed.",
+        );
+      } finally {
+        setAnalyzing(false);
+      }
+    },
+    [filter, load, page, search],
+  );
 
   /**
    * Marks a work item as done or reopens it.
@@ -249,13 +254,17 @@ export const useMailbox = () => {
     async (item: Item): Promise<void> => {
       try {
         const updated = await markWorkItemInProgress(item.thread_id);
-        setSelected((current) => current?.thread_id === item.thread_id ? updated : current);
+        setSelected((current) =>
+          current?.thread_id === item.thread_id ? updated : current,
+        );
         setFilter("in_progress");
         setPage(1);
         await load(1, search, "in_progress");
         setStatus("Work item marked in progress");
       } catch (error: unknown) {
-        setStatus(error instanceof Error ? error.message : "Unable to start work item.");
+        setStatus(
+          error instanceof Error ? error.message : "Unable to start work item.",
+        );
       }
     },
     [load, search],
@@ -277,7 +286,11 @@ export const useMailbox = () => {
         setPage(1);
         await load(1, search, nextFilter);
 
-        setStatus(done ? "Work item marked actioned" : "Work item reopened and returned to In Progress");
+        setStatus(
+          done
+            ? "Work item marked actioned"
+            : "Work item reopened and returned to In Progress",
+        );
       } catch (error: unknown) {
         setStatus(
           error instanceof Error
@@ -286,7 +299,7 @@ export const useMailbox = () => {
         );
       }
     },
-    [filter, load, page, search],
+    [load, search],
   );
 
   const setPinned = useCallback(
@@ -295,11 +308,15 @@ export const useMailbox = () => {
         const updated = pinned
           ? await pinWorkItem(item.thread_id)
           : await unpinWorkItem(item.thread_id);
-        setSelected((current) => current?.thread_id === item.thread_id ? updated : current);
+        setSelected((current) =>
+          current?.thread_id === item.thread_id ? updated : current,
+        );
         await load(page, search, filter);
         setStatus(pinned ? "Thread pinned" : "Thread unpinned");
       } catch (error: unknown) {
-        setStatus(error instanceof Error ? error.message : "Unable to update pin.");
+        setStatus(
+          error instanceof Error ? error.message : "Unable to update pin.",
+        );
       }
     },
     [filter, load, page, search],
@@ -313,17 +330,23 @@ export const useMailbox = () => {
         await load(page, search, filter);
         setStatus(`Priority manually changed to ${priority}`);
       } catch (error: unknown) {
-        setStatus(error instanceof Error ? error.message : "Unable to change priority.");
+        setStatus(
+          error instanceof Error ? error.message : "Unable to change priority.",
+        );
       }
     },
     [filter, load, page, search],
   );
 
   const setEmailType = useCallback(
-    async (item: Item, emailType: "action" | "informational" | "irrelevant"): Promise<void> => {
+    async (
+      item: Item,
+      emailType: "action" | "informational" | "irrelevant",
+    ): Promise<void> => {
       try {
         const updated = await setWorkItemType(item.thread_id, emailType);
-        const nextFilter: Filter = emailType === "action" ? "action" : "archive";
+        const nextFilter: Filter =
+          emailType === "action" ? "action" : "archive";
         setFilter(nextFilter);
         setPage(1);
 
@@ -357,7 +380,11 @@ export const useMailbox = () => {
         );
       } catch (error: unknown) {
         setAnalyzing(false);
-        setStatus(error instanceof Error ? error.message : "Unable to change thread category.");
+        setStatus(
+          error instanceof Error
+            ? error.message
+            : "Unable to change thread category.",
+        );
       }
     },
     [load, search],
@@ -394,10 +421,11 @@ export const useMailbox = () => {
     try {
       const result: Ask = await askMailbox(question);
       setAnswer(result);
-    } catch (error: unknown) {
+    } catch {
       setAnswer({
-        answer: error instanceof Error ? error.message : "Question failed.",
+        answer: "",
         thread_ids: [],
+        thread_titles: {},
         caveats: [],
         suggested_questions: [],
       });
