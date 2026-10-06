@@ -1,10 +1,12 @@
-import { Bot, UserRound } from "lucide-react";
-import type { ChatMessage } from "../types/mailbox";
-import Stack from "@mui/material/Stack";
-import Paper from "@mui/material/Paper";
-import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+
+import { Bot, UserRound } from "lucide-react";
+
+import type { ChatMessage } from "../types/mailbox";
 
 // #region props interface
 export interface ChatConversationProps {

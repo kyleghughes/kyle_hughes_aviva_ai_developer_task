@@ -5,7 +5,11 @@ from .models import Email, Thread
 
 
 def format_email(email: Email) -> str:
-    """Format an email as text for display or LLM input."""
+    """Format a single email as readable text.
+
+    The resulting representation is used both for display and as the
+    structured text supplied to the LLM during thread analysis.
+    """
     return (
         f"MESSAGE {email.message_id}\n"
         f"From: {email.sent_from}\n"
@@ -17,26 +21,40 @@ def format_email(email: Email) -> str:
 
 
 def format_thread(thread: Thread) -> str:
-    """Format a thread chronologically as text."""
+    """Format all messages in a thread in chronological order.
+
+    Messages are explicitly sorted by sent date so the resulting text
+    reflects the progression of the conversation regardless of the order
+    in which messages appear in the source JSON.
+    """
+    messages = sorted(
+        thread.messages,
+        key=lambda item: item.date_sent,
+    )
+
     return "\n---\n".join(
         format_email(message)
-        for message in sorted(
-            thread.messages,
-            key=lambda item: item.date_sent,
-        )
+        for message in messages
     )
 
 
 class JsonMailboxSource:
-    """Reads mailbox threads from a JSON file."""
+    """Read and validate mailbox threads from a JSON file."""
 
     def __init__(self, path: str | Path) -> None:
-        """Set the mailbox file path."""
+        """Set the path to the mailbox JSON file."""
         self.path = Path(path)
 
     def read(self) -> list[Thread]:
-        """Read and validate all mailbox threads."""
-        raw = json.loads(self.path.read_text())
+        """Read the mailbox file and validate its threads.
+
+        The source file is expected to contain an ``emails`` collection.
+        Each entry is validated against the ``Thread`` model before being
+        returned to the rest of the application.
+        """
+        raw = json.loads(
+            self.path.read_text(),
+        )
 
         return [
             Thread.model_validate(thread)

@@ -1,5 +1,7 @@
 import Chip from "@mui/material/Chip";
+
 import type { MouseEvent } from "react";
+
 import type { EmailType, Priority } from "../types/mailbox";
 
 // #region props interface
@@ -10,19 +12,24 @@ export interface WorkTypeBadgeProps {
 }
 // #endregion
 
-export const WorkTypeBadge = ({ type, onClick, disabled = false }: WorkTypeBadgeProps) => {
-  // #region constants
-  const colours = {
-    action: "warning",
-    informational: "info",
-    irrelevant: "default",
-  } as const;
-  const labels = {
-    action: "Actionable",
-    informational: "Informational",
-    irrelevant: "Irrelevant",
-  } as const;
-  // #endregion
+// #region constants
+const colours = {
+  action: "warning",
+  informational: "info",
+  irrelevant: "default",
+} as const;
+const labels = {
+  action: "Actionable",
+  informational: "Informational",
+  irrelevant: "Irrelevant",
+} as const;
+// #endregion
+
+export const WorkTypeBadge = ({
+  type,
+  onClick,
+  disabled = false,
+}: WorkTypeBadgeProps) => {
   return (
     <Chip
       size="small"
@@ -36,14 +43,19 @@ export const WorkTypeBadge = ({ type, onClick, disabled = false }: WorkTypeBadge
   );
 };
 
-
+// #region props interface
 export interface PriorityBadgeProps {
   priority: Priority | null;
   onClick?: (event: MouseEvent<HTMLDivElement>) => void;
   disabled?: boolean;
 }
+// #endregion
 
-export const PriorityBadge = ({ priority, onClick, disabled = false }: PriorityBadgeProps) => {
+export const PriorityBadge = ({
+  priority,
+  onClick,
+  disabled = false,
+}: PriorityBadgeProps) => {
   if (!priority) {
     return (
       <Chip
@@ -58,6 +70,7 @@ export const PriorityBadge = ({ priority, onClick, disabled = false }: PriorityB
     );
   }
 
+  // #region constants
   const colours = {
     high: "error",
     medium: "warning",
@@ -69,6 +82,7 @@ export const PriorityBadge = ({ priority, onClick, disabled = false }: PriorityB
     medium: "Medium",
     low: "Low",
   } as const;
+  // #endregion
 
   return (
     <Chip

@@ -1,4 +1,16 @@
-import { useState } from "react";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Drawer from "@mui/material/Drawer";
+import IconButton from "@mui/material/IconButton";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Stack from "@mui/material/Stack";
+import Typography from "@mui/material/Typography";
+
 import {
   CheckCircle2,
   MessageSquareText,
@@ -7,25 +19,16 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import {
-  Box,
-  Button,
-  Drawer,
-  IconButton,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
-  Stack,
-  Typography,
-} from "@mui/material";
+
+import { useState } from "react";
 import type { ReactNode } from "react";
+
 import type { Item, Thread } from "../types/mailbox";
+
 import { PriorityBadge, WorkTypeBadge } from "./Badge";
 import { ThreadConversation } from "./ThreadConversation";
 
+// #region props interface
 export interface WorkItemDrawerProps {
   item: Item | null;
   thread: Thread | null;
@@ -40,9 +43,14 @@ export interface WorkItemDrawerProps {
   onPriorityChange: (priority: "high" | "medium" | "low") => void;
   onTogglePin: () => void;
 }
+// #endregion
+
+// #region props interface
 export interface SectionTitleProps {
   children: ReactNode;
 }
+// #endregion
+
 export const SectionTitle = ({ children }: SectionTitleProps) => (
   <Typography
     sx={{

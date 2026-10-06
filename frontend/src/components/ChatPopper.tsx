@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import Box from "@mui/material/Box";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import Paper from "@mui/material/Paper";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+
 import { MessageCircle, Trash2, X } from "lucide-react";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import { askMailbox } from "../api/mailboxApi";
+
 import type { ChatMessage, ChatSession, Item } from "../types/mailbox";
-import { ChatComposer } from "./ChatComposer";
-import { ChatConversation, EmptyChatState } from "./ChatConversation";
-import { ChatDeleteDialog } from "./ChatDeleteDialog";
-import { ChatSessionList } from "./ChatSessionList";
+
 import {
   ACTIVE_SESSION_KEY,
   createSession,
@@ -15,14 +24,11 @@ import {
   STORAGE_KEY,
   SUGGESTED_PROMPTS,
 } from "../types/chatTypes";
-import { useTheme } from "@mui/material/styles";
-import Box from "@mui/material/Box";
-import Paper from "@mui/material/Paper";
-import Stack from "@mui/material/Stack";
-import Typography from "@mui/material/Typography";
-import Tooltip from "@mui/material/Tooltip";
-import IconButton from "@mui/material/IconButton";
-import Divider from "@mui/material/Divider";
+
+import { ChatComposer } from "./ChatComposer";
+import { ChatConversation, EmptyChatState } from "./ChatConversation";
+import { ChatDeleteDialog } from "./ChatDeleteDialog";
+import { ChatSessionList } from "./ChatSessionList";
 
 //#region props interface
 export interface ChatPopperProps {

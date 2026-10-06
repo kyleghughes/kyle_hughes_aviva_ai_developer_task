@@ -9,7 +9,12 @@ from .retrieval import is_workload_question, retrieve, workload_evidence
 
 
 class MailboxService:
-    """Application use cases independent of FastAPI request handling."""
+    """Coordinate mailbox use cases independently of HTTP handling.
+
+    This service sits between the API layer and the lower-level
+    ingestion, repository, retrieval, and LLM components. It also records
+    important user and AI actions in the audit log.
+    """
 
     def __init__(
         self,
@@ -18,6 +23,7 @@ class MailboxService:
         llm: EmailLLM,
         audit: AuditLog,
     ) -> None:
+        """Initialise the service and its application dependencies."""
         self.repo = repo
         self.ingestion = ingestion
         self.llm = llm
@@ -34,17 +40,32 @@ class MailboxService:
 
         return result
 
-    def mark_in_progress(self, thread_id: str, in_progress: bool = True) -> WorkItem:
-        """Start work on an actionable item or stop an in-progress state."""
+    def mark_in_progress(
+        self,
+        thread_id: str,
+        in_progress: bool = True,
+    ) -> WorkItem:
+        """Start or stop work on an actionable item."""
         item = self.repo.get_work_item(thread_id)
+
         if item is None:
             raise KeyError(thread_id)
-        updated = self.repo.set_in_progress(thread_id, in_progress)
+
+        updated = self.repo.set_in_progress(
+            thread_id,
+            in_progress,
+        )
+
         self._audit(
-            "work_item_in_progress" if in_progress else "work_item_no_longer_in_progress",
+            (
+                "work_item_in_progress"
+                if in_progress
+                else "work_item_no_longer_in_progress"
+            ),
             thread_id=thread_id,
             details={"in_progress": in_progress},
         )
+
         return updated
 
     def mark_done(
@@ -52,16 +73,27 @@ class MailboxService:
         thread_id: str,
         done: bool,
     ) -> WorkItem:
-        """Mark a workload item as done or reopen it."""
-        if self.repo.get_work_item(thread_id) is None:
+        """Mark a workload item as actioned or reopen it.
+
+        Only actionable emails can change workflow status, and an item
+        must be In Progress before it can be marked Actioned.
+        """
+        item = self.repo.get_work_item(thread_id)
+
+        if item is None:
             raise KeyError(thread_id)
 
-        if self.repo.work_items[thread_id].email_type is not EmailType.ACTION:
-            raise ValueError("Only actionable emails can change work status.")
-        if done and not self.repo.work_items[thread_id].in_progress:
-            raise ValueError("A work item must be in progress before it can be actioned.")
+        if item.email_type is not EmailType.ACTION:
+            raise ValueError(
+                "Only actionable emails can change work status."
+            )
 
-        item = self.repo.set_done(
+        if done and not item.in_progress:
+            raise ValueError(
+                "A work item must be in progress before it can be actioned."
+            )
+
+        updated = self.repo.set_done(
             thread_id,
             done,
         )
@@ -72,53 +104,101 @@ class MailboxService:
             details={"done": done},
         )
 
-        return item
+        return updated
 
-    def set_pinned(self, thread_id: str, pinned: bool) -> WorkItem:
-        """Pin or unpin a thread."""
+    def set_pinned(
+        self,
+        thread_id: str,
+        pinned: bool,
+    ) -> WorkItem:
+        """Pin or unpin a thread in the workload view."""
         if self.repo.get_work_item(thread_id) is None:
             raise KeyError(thread_id)
 
-        item = self.repo.set_pinned(thread_id, pinned)
+        item = self.repo.set_pinned(
+            thread_id,
+            pinned,
+        )
+
         self._audit(
             "work_item_pinned" if pinned else "work_item_unpinned",
             thread_id=thread_id,
             details={"pinned": pinned},
         )
+
         return item
 
-    def set_priority(self, thread_id: str, priority: Priority) -> WorkItem:
-        """Apply a manual priority override after AI analysis."""
+    def set_priority(
+        self,
+        thread_id: str,
+        priority: Priority,
+    ) -> WorkItem:
+        """Apply a manual priority override after AI analysis.
+
+        Manual priority changes are only available for actionable threads
+        whose AI analysis has already completed.
+        """
         item = self.repo.get_work_item(thread_id)
+
         if item is None:
             raise KeyError(thread_id)
+
         if item.email_type is not EmailType.ACTION:
-            raise ValueError("Priority is only available for actionable emails.")
+            raise ValueError(
+                "Priority is only available for actionable emails."
+            )
+
         if item.analysis_status != "analyzed":
-            raise ValueError("AI analysis must be complete before priority can be overridden.")
+            raise ValueError(
+                "AI analysis must be complete before priority can be overridden."
+            )
 
         previous = item.priority
-        updated = self.repo.set_priority(thread_id, priority)
+
+        updated = self.repo.set_priority(
+            thread_id,
+            priority,
+        )
+
         self._audit(
             "work_item_priority_changed",
             thread_id=thread_id,
-            details={"from": previous.value if previous else None, "to": priority.value, "manual_override": True},
+            details={
+                "from": previous.value if previous else None,
+                "to": priority.value,
+                "manual_override": True,
+            },
         )
+
         return updated
 
-    def set_email_type(self, thread_id: str, email_type: EmailType) -> WorkItem:
-        """Apply a user-selected workflow category override."""
+    def set_email_type(
+        self,
+        thread_id: str,
+        email_type: EmailType,
+    ) -> WorkItem:
+        """Apply a user-selected workflow category override.
+
+        Changing category always clears previous AI analysis. This ensures
+        that a thread moved back into the actionable workflow receives a
+        fresh AI assessment rather than reusing stale decision support.
+        """
         if self.repo.get_work_item(thread_id) is None:
             raise KeyError(thread_id)
 
         previous = self.repo.work_items[thread_id].email_type
-        item = self.repo.set_email_type(thread_id, email_type)
 
-        # Category changes invalidate decision support in both directions.
-        # Moving away from actionable makes the thread archive-only; moving
-        # back to actionable must force a fresh AI assessment and priority.
+        self.repo.set_email_type(
+            thread_id,
+            email_type,
+        )
+
+        # A category change invalidates analysis in both directions.
         self.repo.invalidate_analysis(thread_id)
+
         if email_type is not EmailType.ACTION:
+            # Archived threads are conversation-only and do not retain
+            # AI-derived workload fields.
             item = self.repo.work_items[thread_id].model_copy(
                 update={
                     "topic": None,
@@ -132,6 +212,8 @@ class MailboxService:
                 },
             )
         else:
+            # Returning an archived thread to actionable makes it eligible
+            # for fresh AI analysis when the user opens it.
             item = self.repo.work_items[thread_id].model_copy(
                 update={
                     "topic": None,
@@ -144,22 +226,34 @@ class MailboxService:
                     "analysis_status": "not_analyzed",
                 },
             )
+
         self.repo.work_items[thread_id] = item
 
         self._audit(
             "work_item_type_changed",
             thread_id=thread_id,
-            details={"from": previous.value, "to": email_type.value},
+            details={
+                "from": previous.value,
+                "to": email_type.value,
+            },
         )
+
         return item
 
-    def analyze(self, thread_id: str):
-        """Generate AI decision support and update the workload item."""
+    def analyze(
+        self,
+        thread_id: str,
+    ):
+        """Generate AI decision support for an actionable thread."""
         if self.repo.get_thread(thread_id) is None:
             raise KeyError(thread_id)
+
         item = self.repo.get_work_item(thread_id)
+
         if item is not None and item.email_type.value != "action":
-            raise ValueError("AI analysis is only available for actionable emails.")
+            raise ValueError(
+                "AI analysis is only available for actionable emails."
+            )
 
         decision = self.ingestion.analyze_thread(thread_id)
         item = self.repo.get_work_item(thread_id)
@@ -176,21 +270,37 @@ class MailboxService:
 
         return decision, item
 
-    def ask(self, request: AskRequest) -> AskResponse:
-        """Answer a mailbox question using the appropriate evidence."""
+    def ask(
+        self,
+        request: AskRequest,
+    ) -> AskResponse:
+        """Answer a mailbox question using the most appropriate evidence.
+
+        Questions can be scoped to a single thread, focused on the current
+        actionable workload, or answered using general mailbox retrieval.
+        The LLM receives only the evidence selected for that mode.
+        """
         if not self.repo.threads:
             raise RuntimeError(
-                "Ingest the mailbox before asking questions.",
+                "Ingest the mailbox before asking questions."
             )
 
         if request.thread_id:
+            # A thread-specific question gets the complete conversation.
             ids, evidence, mode = self._thread_evidence(
                 request.thread_id,
             )
+
         elif is_workload_question(request.question):
-            ids, evidence = workload_evidence(self.repo, question=request.question)
+            # Workload questions use only currently open actionable items.
+            ids, evidence = workload_evidence(
+                self.repo,
+                question=request.question,
+            )
             mode = "workload"
+
         else:
+            # General questions use simple deterministic term retrieval.
             ids = retrieve(
                 self.repo,
                 request.question,
@@ -250,13 +360,18 @@ class MailboxService:
         self,
         thread_id: str,
     ) -> tuple[list[str], str, str]:
-        """Build evidence for a question about one thread."""
+        """Build LLM evidence for a question about one thread."""
         thread = self.repo.get_thread(thread_id)
 
         if thread is None:
             raise KeyError(thread_id)
 
-        title = self.repo.work_items[thread_id].subject if thread_id in self.repo.work_items else thread.messages[-1].subject
+        title = (
+            self.repo.work_items[thread_id].subject
+            if thread_id in self.repo.work_items
+            else thread.messages[-1].subject
+        )
+
         evidence = (
             f"WORK ITEM TITLE: {title}\n"
             f"{format_thread(thread)}"
@@ -264,17 +379,23 @@ class MailboxService:
 
         return [thread_id], evidence, "thread_search"
 
-    def _format_threads(self, thread_ids: list[str]) -> str:
-        """Format retrieved threads as LLM evidence."""
+    def _format_threads(
+        self,
+        thread_ids: list[str],
+    ) -> str:
+        """Format retrieved threads as grounded LLM evidence."""
         return "\n\n".join(
-            f"WORK ITEM TITLE: {self.repo.work_items[thread_id].subject if thread_id in self.repo.work_items else self.repo.threads[thread_id].messages[-1].subject}\n"
-            f"{format_thread(self.repo.threads[thread_id])}"
+            (
+                f"WORK ITEM TITLE: "
+                f"{self.repo.work_items[thread_id].subject if thread_id in self.repo.work_items else self.repo.threads[thread_id].messages[-1].subject}\n"
+                f"{format_thread(self.repo.threads[thread_id])}"
+            )
             for thread_id in thread_ids
         )
 
     @staticmethod
     def _question_caveat(mode: str) -> str:
-        """Return the evidence limitation for a Q&A mode."""
+        """Return a short explanation of the evidence used for Q&A."""
         if mode == "workload":
             return (
                 "Work type is deterministic business logic; priority, urgency "
@@ -291,7 +412,7 @@ class MailboxService:
         thread_id: str | None = None,
         details: dict,
     ) -> None:
-        """Record an auditable application event."""
+        """Record an auditable application event with model and rule metadata."""
         self.audit.record(
             event_type,
             thread_id=thread_id,

@@ -1,14 +1,21 @@
-import { useState } from "react";
-import { Container, Fab, Tooltip } from "@mui/material";
+import Container from "@mui/material/Container";
+import Fab from "@mui/material/Fab";
+import Tooltip from "@mui/material/Tooltip";
+
 import { MessageCircle } from "lucide-react";
+
+import { useState } from "react";
+
 import { AppHeader } from "./components/AppHeader";
 import { Hero } from "./components/Hero";
-import { WorkloadToolbar } from "./components/WorkloadToolbar";
-import { WorkloadTable } from "./components/WorkloadTable";
 import { WorkloadPagination } from "./components/WorkloadPagination";
-import { WorkItemDrawer } from "./components/WorkItemDrawer";
+import { WorkloadTable } from "./components/WorkloadTable";
+import { WorkloadToolbar } from "./components/WorkloadToolbar";
 import ChatPopper from "./components/ChatPopper";
+import { WorkItemDrawer } from "./components/WorkItemDrawer";
+
 import { useMailbox } from "./hooks/useMailbox";
+
 import type { Item } from "./types/mailbox";
 
 // #region props interface
@@ -83,8 +90,7 @@ const App = ({ mode, onToggleMode }: AppProps) => {
         analyzing={mailbox.analyzing}
         onClose={mailbox.closeDrawer}
         onInProgress={() => {
-          if (mailbox.selected)
-            void mailbox.setInProgress(mailbox.selected);
+          if (mailbox.selected) void mailbox.setInProgress(mailbox.selected);
         }}
         onDone={() => {
           if (mailbox.selected)
@@ -95,13 +101,16 @@ const App = ({ mode, onToggleMode }: AppProps) => {
             void mailbox.setDoneState(mailbox.selected, false);
         }}
         onTypeChange={(type) => {
-          if (mailbox.selected) void mailbox.setEmailType(mailbox.selected, type);
+          if (mailbox.selected)
+            void mailbox.setEmailType(mailbox.selected, type);
         }}
         onPriorityChange={(priority) => {
-          if (mailbox.selected) void mailbox.setPriority(mailbox.selected, priority);
+          if (mailbox.selected)
+            void mailbox.setPriority(mailbox.selected, priority);
         }}
         onTogglePin={() => {
-          if (mailbox.selected) void mailbox.setPinned(mailbox.selected, !mailbox.selected.pinned);
+          if (mailbox.selected)
+            void mailbox.setPinned(mailbox.selected, !mailbox.selected.pinned);
         }}
         onAskFollowUp={() => {
           if (!mailbox.selected) return;

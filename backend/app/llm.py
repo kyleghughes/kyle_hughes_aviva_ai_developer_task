@@ -6,6 +6,8 @@ import urllib.request
 from .models import LLMDecision
 
 
+# Default Ollama connection settings. Environment variables can override
+# these values when the application starts.
 OLLAMA_URL = os.getenv(
     "OLLAMA_URL",
     "http://localhost:11434",
@@ -16,6 +18,8 @@ DEFAULT_MODEL = os.getenv(
 )
 
 
+# The model is used for decision support only. Email workflow classification
+# remains deterministic and is deliberately kept outside the LLM.
 SYSTEM_PROMPT = """You are decision support for an insurance claims handler.
 
 The application has ALREADY determined the mailbox workflow type using deterministic
@@ -54,18 +58,25 @@ class LLMUnavailable(RuntimeError):
 
 
 class EmailLLM:
-    """Ollama adapter for AI decision support and natural-language Q&A."""
+    """Adapter around Ollama for AI decision support and mailbox Q&A.
+
+    The class owns all communication with the local Ollama service,
+    including request construction, connectivity checks, response parsing,
+    and conversion of model failures into application-level errors.
+    """
 
     def __init__(self) -> None:
-        """Load Ollama connection settings from the environment."""
+        """Load Ollama connection settings from environment variables."""
         self.base_url = os.getenv(
             "OLLAMA_URL",
             OLLAMA_URL,
         ).rstrip("/")
+
         self.model = os.getenv(
             "OLLAMA_MODEL",
             DEFAULT_MODEL,
         )
+
         self.timeout = int(
             os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"),
         )
@@ -76,7 +87,11 @@ class EmailLLM:
         user: str,
         json_mode: bool = False,
     ) -> str:
-        """Send a chat request to Ollama and return the model response."""
+        """Send a chat request to Ollama and return the response text.
+
+        ``json_mode`` asks Ollama to return structured JSON when the caller
+        expects machine-readable model output.
+        """
         payload = {
             "model": self.model,
             "messages": [
@@ -91,6 +106,8 @@ class EmailLLM:
             ],
             "stream": False,
             "options": {
+                # Deterministic output is preferable for decision support
+                # and makes the model behaviour easier to audit and test.
                 "temperature": 0,
             },
         }
@@ -117,7 +134,12 @@ class EmailLLM:
         path: str,
         payload: dict,
     ) -> dict:
-        """Send a JSON POST request to Ollama."""
+        """Send a JSON POST request to Ollama.
+
+        Ollama-specific connection failures are translated into
+        ``LLMUnavailable`` so the rest of the application does not need
+        to handle low-level ``urllib`` exceptions.
+        """
         request = urllib.request.Request(
             f"{self.base_url}{path}",
             data=json.dumps(payload).encode("utf-8"),
@@ -174,7 +196,7 @@ class EmailLLM:
             ) from exc
 
     def status(self) -> dict:
-        """Return Ollama connectivity and model diagnostics."""
+        """Return Ollama connectivity and model availability diagnostics."""
         try:
             request = urllib.request.Request(
                 f"{self.base_url}/api/tags",
@@ -239,7 +261,7 @@ class EmailLLM:
             )
 
     def _unavailable_status(self, message: str) -> dict:
-        """Build a consistent unavailable-status response."""
+        """Build a consistent response when Ollama is unavailable."""
         return {
             "available": False,
             "model_installed": False,
@@ -250,21 +272,28 @@ class EmailLLM:
         }
 
     def is_available(self) -> bool:
-        """Return whether Ollama and the configured model are available."""
+        """Return whether Ollama is reachable and the configured model exists."""
         status = self.status()
+
         return bool(
             status["available"]
             and status["model_installed"]
         )
 
     def classify(self, thread_text: str) -> LLMDecision:
-        """Generate structured AI decision support for a thread."""
+        """Generate structured AI decision support for an email thread.
+
+        The model analyses an already-classified actionable thread and
+        returns topic, actions, evidence signals, priority, summary,
+        confidence, and rationale.
+        """
         try:
             response = self._chat(
                 SYSTEM_PROMPT,
                 thread_text,
                 json_mode=True,
             )
+
             data = json.loads(response)
 
             return LLMDecision.model_validate(data)
@@ -281,8 +310,15 @@ class EmailLLM:
         mode: str = "thread_search",
         history: list[dict[str, str]] | None = None,
     ) -> dict:
-        """Answer a mailbox question using only the supplied evidence."""
+        """Answer a mailbox question using only the supplied evidence.
+
+        ``mode`` controls the system prompt used for the question. The
+        optional conversation history allows follow-up questions while
+        the current mailbox evidence remains explicitly supplied to the
+        model.
+        """
         system = self._question_system_prompt(mode)
+
         messages = self._build_history(
             question,
             evidence,
@@ -328,7 +364,7 @@ class EmailLLM:
 
     @staticmethod
     def _question_system_prompt(mode: str) -> str:
-        """Return the system prompt for the requested Q&A mode."""
+        """Build the system prompt for the requested mailbox Q&A mode."""
         if mode == "workload":
             system = """You support an insurance claims handler deciding what deserves attention.
 The evidence contains only currently open actionable work items; actioned and archived
@@ -371,7 +407,7 @@ repeat the user's question. If there is no sensible follow-up, return an empty a
         evidence: str,
         history: list[dict[str, str]] | None,
     ) -> list[dict[str, str]]:
-        """Keep valid conversation history and append the current question."""
+        """Filter valid conversation history and append the current question."""
         messages = [
             message
             for message in history or []
@@ -393,7 +429,12 @@ repeat the user's question. If there is no sensible follow-up, return an empty a
 
     @staticmethod
     def _parse_answer(result: dict) -> dict:
-        """Validate and normalise the model's Q&A response."""
+        """Validate and normalise the model's Q&A response.
+
+        A missing or invalid answer is treated as an unavailable model
+        response. Invalid suggestions are discarded rather than allowing
+        malformed model output into the API response.
+        """
         answer = result.get("answer")
         suggestions = result.get(
             "suggested_questions",

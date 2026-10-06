@@ -3,8 +3,12 @@ import os
 from .models import Email, EmailType, Priority, WorkItem
 
 
+# Version identifier stored with audit information so rule changes can be
+# traced independently of AI-generated decisions.
 RULE_VERSION = "work-type-v1"
 
+
+# Lower values appear earlier in the workload ordering.
 WORK_TYPE_ORDER = {
     EmailType.ACTION: 0,
     EmailType.INFORMATIONAL: 1,
@@ -18,6 +22,8 @@ PRIORITY_ORDER = {
 }
 
 
+# Terms that strongly suggest an email is noise or does not belong in the
+# actionable workload.
 IRRELEVANT_TERMS = (
     "unsubscribe",
     "newsletter",
@@ -34,6 +40,9 @@ IRRELEVANT_TERMS = (
     "office lunch",
 )
 
+
+# Terms that explicitly frame an email as informational rather than requiring
+# work from the handler.
 INFORMATIONAL_TERMS = (
     "for your information",
     "for information",
@@ -45,6 +54,8 @@ INFORMATIONAL_TERMS = (
     "please note",
 )
 
+
+# Terms that indicate the recipient is being asked to do something.
 ACTION_TERMS = (
     "please review",
     "please confirm",
@@ -74,19 +85,26 @@ ACTION_TERMS = (
 
 
 def _text(email: Email) -> str:
-    """Return the searchable text for an email."""
+    """Return the subject and body as lowercase searchable text."""
     return f"{email.subject}\n{email.body}".lower()
 
 
 def classify_thread(
     messages: list[Email],
 ) -> tuple[EmailType, list[str]]:
-    """Classify a thread using deterministic business rules only."""
+    """Classify a thread using deterministic business rules.
+
+    Classification deliberately does not use the LLM. The rules provide
+    predictable workflow routing, while AI analysis is used separately
+    for decision support such as priority and workload interpretation.
+    """
     text = "\n".join(
         _text(message)
         for message in messages
     )
 
+    # Noise is classified as irrelevant unless the same thread contains
+    # an explicit action request, which takes precedence.
     irrelevant_hits = [
         term
         for term in IRRELEVANT_TERMS
@@ -104,6 +122,8 @@ def classify_thread(
             ],
         )
 
+    # Identify explicit informational and action signals before deciding
+    # between the remaining workflow categories.
     informational_hits = [
         term
         for term in INFORMATIONAL_TERMS
@@ -116,6 +136,8 @@ def classify_thread(
         if term in text
     ]
 
+    # An explicit "no action" statement overrides other informational
+    # wording because it directly describes the required workflow.
     if any(
         term in text
         for term in ("no action required", "no action needed")
@@ -131,6 +153,7 @@ def classify_thread(
             ["Explicitly framed as informational or requiring no action"],
         )
 
+    # Any explicit action signal makes the thread actionable.
     if action_hits:
         return (
             EmailType.ACTION,
@@ -141,7 +164,8 @@ def classify_thread(
         )
 
     # A direct message to the configured handler mailbox is treated as
-    # workload rather than being silently discarded.
+    # workload rather than being silently discarded when no stronger
+    # informational or noise signal was found.
     latest = max(
         messages,
         key=lambda message: message.date_sent,
@@ -164,13 +188,22 @@ def classify_thread(
             ],
         )
 
+    # If the thread contains no explicit action, informational, or noise
+    # signal, keep it visible as informational rather than treating it
+    # as irrelevant.
     return (
         EmailType.INFORMATIONAL,
         ["Relevant mailbox message with no explicit action signal"],
     )
 
+
 def sort_work_items(items: list[WorkItem]) -> list[WorkItem]:
-    """Sort actionable work by AI priority, then actioned items by date."""
+    """Sort workload items into the order used by the UI.
+
+    Unactioned work is shown before actioned work. Within the active
+    workload, pinned items come first, followed by AI/manual priority
+    and then the most recently updated threads.
+    """
     return sorted(
         items,
         key=lambda item: (
@@ -184,13 +217,46 @@ def sort_work_items(items: list[WorkItem]) -> list[WorkItem]:
 
 
 def count_work_items(items: list[WorkItem]) -> dict[str, int]:
-    """Return workload counts used by the UI."""
+    """Return workload counts used by the UI.
+
+    Counts are derived from the current work-item state so they reflect
+    category, workflow status, and whether AI analysis has been completed.
+    """
     return {
-        "action": sum(not item.done and item.email_type is EmailType.ACTION for item in items),
-        "archive": sum(not item.done and item.email_type is not EmailType.ACTION for item in items),
-        "informational": sum(not item.done and item.email_type is EmailType.INFORMATIONAL for item in items),
-        "irrelevant": sum(not item.done and item.email_type is EmailType.IRRELEVANT for item in items),
-        "done": sum(item.done for item in items),
-        "in_progress": sum(item.in_progress and not item.done and item.email_type is EmailType.ACTION for item in items),
-        "pending": sum(not item.done and item.email_type is EmailType.ACTION and item.analysis_status != "analyzed" for item in items),
+        "action": sum(
+            not item.done
+            and item.email_type is EmailType.ACTION
+            for item in items
+        ),
+        "archive": sum(
+            not item.done
+            and item.email_type is not EmailType.ACTION
+            for item in items
+        ),
+        "informational": sum(
+            not item.done
+            and item.email_type is EmailType.INFORMATIONAL
+            for item in items
+        ),
+        "irrelevant": sum(
+            not item.done
+            and item.email_type is EmailType.IRRELEVANT
+            for item in items
+        ),
+        "done": sum(
+            item.done
+            for item in items
+        ),
+        "in_progress": sum(
+            item.in_progress
+            and not item.done
+            and item.email_type is EmailType.ACTION
+            for item in items
+        ),
+        "pending": sum(
+            not item.done
+            and item.email_type is EmailType.ACTION
+            and item.analysis_status != "analyzed"
+            for item in items
+        ),
     }

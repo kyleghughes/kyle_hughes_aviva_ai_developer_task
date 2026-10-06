@@ -1,14 +1,15 @@
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import Stack from "@mui/material/Stack";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+
 import { Plus, Trash2 } from "lucide-react";
-import {
-  Box,
-  Button,
-  Divider,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+
 import type { ChatSession } from "../types/mailbox";
+
 import { formatSessionDate } from "../types/chatTypes";
 
 // #region props interface

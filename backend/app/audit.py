@@ -1,12 +1,18 @@
 from datetime import datetime, timezone
+
 from .models import AuditEvent
 
 
 class AuditLog:
-    """Small in-memory audit store for application events."""
+    """In-memory store for recent application audit events.
+
+    The log is intentionally bounded so that application activity can be
+    inspected during runtime without allowing the in-memory collection to
+    grow indefinitely.
+    """
 
     def __init__(self, limit: int = 100) -> None:
-        """Initialise the audit store with a maximum event count."""
+        """Initialise the audit log with a maximum number of retained events."""
         self.limit = limit
         self.events: list[AuditEvent] = []
 
@@ -19,7 +25,13 @@ class AuditLog:
         rule_version: str | None = None,
         details: dict | None = None,
     ) -> AuditEvent:
-        """Record an event and retain only the most recent entries."""
+        """Create, store, and return an audit event.
+
+        Events are timestamped in UTC and may optionally include the
+        associated thread, LLM model, rule version, and additional details.
+
+        Only the most recent ``limit`` events are retained.
+        """
         event = AuditEvent(
             timestamp=datetime.now(timezone.utc),
             event_type=event_type,
@@ -31,11 +43,15 @@ class AuditLog:
 
         self.events.append(event)
 
-        # Keep the in-memory audit log bounded.
+        # Keep the in-memory audit log bounded by discarding older events.
         del self.events[:-self.limit]
 
         return event
 
     def recent(self) -> list[AuditEvent]:
-        """Return a copy of the retained audit events."""
+        """Return the currently retained audit events.
+
+        A new list is returned so callers cannot directly modify the
+        audit log's internal collection.
+        """
         return list(self.events)

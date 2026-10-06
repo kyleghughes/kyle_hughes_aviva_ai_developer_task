@@ -279,10 +279,17 @@ export const askMailbox = async (
  * @returns The updated work item.
  * @throws Error if the backend cannot update the item.
  */
-export const markWorkItemInProgress = async (threadId: string): Promise<Item> => {
-  const response = await fetch(`${API}/work-items/${threadId}/in-progress`, { method: "POST" });
+export const markWorkItemInProgress = async (
+  threadId: string,
+): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/in-progress`, {
+    method: "POST",
+  });
   if (!response.ok) {
-    const errorMessage = await parseError(response, "Unable to mark work item in progress.");
+    const errorMessage = await parseError(
+      response,
+      "Unable to mark work item in progress.",
+    );
     throw new Error(errorMessage);
   }
   return response.json();
@@ -335,7 +342,9 @@ export const markWorkItemIncomplete = async (
 };
 
 export const pinWorkItem = async (threadId: string): Promise<Item> => {
-  const response = await fetch(`${API}/work-items/${threadId}/pin`, { method: "POST" });
+  const response = await fetch(`${API}/work-items/${threadId}/pin`, {
+    method: "POST",
+  });
   if (!response.ok) {
     throw new Error(await parseError(response, "Unable to pin thread."));
   }
@@ -343,7 +352,9 @@ export const pinWorkItem = async (threadId: string): Promise<Item> => {
 };
 
 export const unpinWorkItem = async (threadId: string): Promise<Item> => {
-  const response = await fetch(`${API}/work-items/${threadId}/unpin`, { method: "POST" });
+  const response = await fetch(`${API}/work-items/${threadId}/unpin`, {
+    method: "POST",
+  });
   if (!response.ok) {
     throw new Error(await parseError(response, "Unable to unpin thread."));
   }
@@ -359,7 +370,10 @@ export const setWorkItemType = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email_type: emailType }),
   });
-  if (!response.ok) throw new Error(await parseError(response, "Unable to change thread category."));
+  if (!response.ok)
+    throw new Error(
+      await parseError(response, "Unable to change thread category."),
+    );
   return response.json();
 };
 
@@ -372,6 +386,7 @@ export const setWorkItemPriority = async (
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ priority }),
   });
-  if (!response.ok) throw new Error(await parseError(response, "Unable to change priority."));
+  if (!response.ok)
+    throw new Error(await parseError(response, "Unable to change priority."));
   return response.json();
 };

@@ -1,10 +1,12 @@
+import CssBaseline from "@mui/material/CssBaseline";
+import { ThemeProvider } from "@mui/material/styles";
+
 import { useMemo, useState } from "react";
 
 import App from "./App";
 import { createAppTheme } from "./theme/theme";
+
 import "./styles.css";
-import { ThemeProvider } from "@mui/material/styles";
-import CssBaseline from "@mui/material/CssBaseline";
 
 const Root = () => {
   const [mode, setMode] = useState<"light" | "dark">(() => {
