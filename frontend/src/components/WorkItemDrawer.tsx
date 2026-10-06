@@ -118,6 +118,7 @@ export const WorkItemDrawer = ({
             justifyContent="space-between"
             alignItems="flex-start"
             gap={1.5}
+            mt={3}
           >
             <Typography variant="h2" fontSize={25} lineHeight={1.18} mb={1.5}>
               {item.subject}
