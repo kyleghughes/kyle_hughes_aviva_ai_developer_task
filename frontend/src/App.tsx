@@ -65,8 +65,7 @@ const App = ({ mode, onToggleMode }: AppProps) => {
         <WorkloadTable
           items={mailbox.items}
           onOpen={mailbox.openItem}
-          onDone={(item) => void mailbox.setDoneState(item, true)}
-          onIncomplete={(item) => void mailbox.setDoneState(item, false)}
+          onTogglePin={(item) => void mailbox.setPinned(item, !item.pinned)}
         />
         <WorkloadPagination
           page={mailbox.page}
@@ -83,6 +82,10 @@ const App = ({ mode, onToggleMode }: AppProps) => {
         threadLoading={mailbox.threadLoading}
         analyzing={mailbox.analyzing}
         onClose={mailbox.closeDrawer}
+        onInProgress={() => {
+          if (mailbox.selected)
+            void mailbox.setInProgress(mailbox.selected);
+        }}
         onDone={() => {
           if (mailbox.selected)
             void mailbox.setDoneState(mailbox.selected, true);
@@ -90,6 +93,15 @@ const App = ({ mode, onToggleMode }: AppProps) => {
         onIncomplete={() => {
           if (mailbox.selected)
             void mailbox.setDoneState(mailbox.selected, false);
+        }}
+        onTypeChange={(type) => {
+          if (mailbox.selected) void mailbox.setEmailType(mailbox.selected, type);
+        }}
+        onPriorityChange={(priority) => {
+          if (mailbox.selected) void mailbox.setPriority(mailbox.selected, priority);
+        }}
+        onTogglePin={() => {
+          if (mailbox.selected) void mailbox.setPinned(mailbox.selected, !mailbox.selected.pinned);
         }}
         onAskFollowUp={() => {
           if (!mailbox.selected) return;

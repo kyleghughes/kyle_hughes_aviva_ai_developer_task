@@ -9,7 +9,7 @@ from .config import settings
 from .ingestion import ContinuousIngestor, IngestionService
 from .llm import EmailLLM, LLMUnavailable
 from .mailbox import JsonMailboxSource
-from .models import AskRequest, AskResponse
+from .models import AskRequest, AskResponse, EmailType, PriorityUpdate, WorkTypeUpdate
 from .repository import MailboxRepository
 from .services import MailboxService
 from .workload import paginate_work_items
@@ -92,7 +92,7 @@ def create_app(service: MailboxService | None = None, poller: ContinuousIngestor
     @router.get("/work-items")
     def work_items(
         q: str = Query("", max_length=200),
-        filter: str = Query("all", pattern="^(all|action|informational|irrelevant|done)$"),
+        filter: str = Query("action", pattern="^(action|in_progress|archive|done)$"),
         page: int = Query(1, ge=1),
         page_size: int = Query(10, ge=1, le=100),
     ):
@@ -114,13 +114,61 @@ def create_app(service: MailboxService | None = None, poller: ContinuousIngestor
             raise HTTPException(404, "Work item not found.")
         return item
 
+    @router.post("/work-items/{thread_id}/pin")
+    def pin(thread_id: str):
+        require_work_item(thread_id)
+        try:
+            return service.set_pinned(thread_id, True)
+        except KeyError as exc:
+            raise HTTPException(404, "Work item not found.") from exc
+
+    @router.post("/work-items/{thread_id}/unpin")
+    def unpin(thread_id: str):
+        require_work_item(thread_id)
+        try:
+            return service.set_pinned(thread_id, False)
+        except KeyError as exc:
+            raise HTTPException(404, "Work item not found.") from exc
+
+    @router.post("/work-items/{thread_id}/type")
+    def set_type(thread_id: str, request: WorkTypeUpdate):
+        require_work_item(thread_id)
+        try:
+            return service.set_email_type(thread_id, request.email_type)
+        except KeyError as exc:
+            raise HTTPException(404, "Work item not found.") from exc
+
+    @router.post("/work-items/{thread_id}/priority")
+    def set_priority(thread_id: str, request: PriorityUpdate):
+        require_work_item(thread_id)
+        try:
+            return service.set_priority(thread_id, request.priority)
+        except KeyError as exc:
+            raise HTTPException(404, "Work item not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @router.post("/work-items/{thread_id}/in-progress")
+    def mark_in_progress(thread_id: str):
+        require_work_item(thread_id)
+        try:
+            return service.mark_in_progress(thread_id, True)
+        except KeyError as exc:
+            raise HTTPException(404, "Work item not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
     @router.post("/work-items/{thread_id}/done")
     def mark_done(thread_id: str):
         require_work_item(thread_id)
         try:
+            if service.repo.work_items[thread_id].email_type is not EmailType.ACTION:
+                raise HTTPException(409, "Only actionable emails can be marked actioned.")
             return service.mark_done(thread_id, True)
         except KeyError as exc:
             raise HTTPException(404, "Work item not found.") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @router.post("/work-items/{thread_id}/incomplete")
     def mark_incomplete(thread_id: str):
@@ -149,6 +197,8 @@ def create_app(service: MailboxService | None = None, poller: ContinuousIngestor
             decision, item = service.analyze(thread_id)
         except LLMUnavailable as exc:
             raise HTTPException(503, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         return {"decision": decision, "work_item": item}
 
     @router.post("/ask", response_model=AskResponse)

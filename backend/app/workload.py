@@ -54,7 +54,7 @@ def paginate_work_items(
     page: int = 1,
     page_size: int = 10,
     query: str = "",
-    filter_name: str = "all",
+    filter_name: str = "action",
 ) -> WorkItemPage:
     """Filter, sort and paginate workload items."""
     if page < 1:
@@ -64,10 +64,9 @@ def paginate_work_items(
         raise ValueError("page_size must be between 1 and 100")
 
     valid_filters = {
-        "all",
         "action",
-        "informational",
-        "irrelevant",
+        "in_progress",
+        "archive",
         "done",
     }
 
@@ -80,16 +79,14 @@ def paginate_work_items(
         if _matches(item, query)
     ]
 
-    if filter_name == "all":
-        filtered = [item for item in filtered if not item.done]
-    elif filter_name == "done":
-        filtered = [item for item in filtered if item.done]
+    if filter_name == "action":
+        filtered = [item for item in filtered if not item.done and not item.in_progress and item.email_type.value == "action"]
+    elif filter_name == "in_progress":
+        filtered = [item for item in filtered if not item.done and item.in_progress and item.email_type.value == "action"]
+    elif filter_name == "archive":
+        filtered = [item for item in filtered if not item.done and item.email_type.value in {"informational", "irrelevant"}]
     else:
-        filtered = [
-            item
-            for item in filtered
-            if not item.done and item.email_type.value == filter_name
-        ]
+        filtered = [item for item in filtered if item.done]
 
     ordered = sort_work_items(filtered)
     total = len(ordered)

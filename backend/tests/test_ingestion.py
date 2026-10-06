@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 import pytest
 
 from app.ingestion import ContinuousIngestor
-from app.models import LLMDecision
+from app.models import LLMDecision, Priority
 
 
 def test_ingest_indexes_threads_and_preserves_done_state(ingested_service):
     assert len(ingested_service.repo.threads) == 50
     first = next(iter(ingested_service.repo.work_items))
+    ingested_service.repo.set_in_progress(first, True)
     ingested_service.repo.set_done(first, True)
     ingested_service.ingestion.ingest()
     assert ingested_service.repo.work_items[first].done
@@ -16,11 +17,12 @@ def test_ingest_indexes_threads_and_preserves_done_state(ingested_service):
 
 def test_analyze_thread_updates_repository(ingested_service, monkeypatch):
     first = next(iter(ingested_service.repo.work_items))
-    decision = LLMDecision(topic="claim", summary="Summary", rationale="Evidence", confidence=.9)
+    decision = LLMDecision(topic="claim", summary="Summary", rationale="Evidence", confidence=.9, priority=Priority.MEDIUM)
     monkeypatch.setattr(ingested_service.llm, "classify", lambda _: decision)
     result = ingested_service.ingestion.analyze_thread(first)
     assert result == decision
     assert ingested_service.repo.work_items[first].analysis_status == "analyzed"
+    assert ingested_service.repo.work_items[first].priority is Priority.MEDIUM
 
 
 def test_analyze_missing_thread_raises(ingested_service):

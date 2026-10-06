@@ -70,8 +70,8 @@ def test_filters_apply_before_pagination():
     ] == ["d"]
     assert [
         x.thread_id
-        for x in paginate_work_items(values, filter_name="all").items
-    ] == ["a", "i"]
+        for x in paginate_work_items(values, filter_name="archive").items
+    ] == ["i"]
 
 
 def test_invalid_pagination_arguments_are_rejected():
@@ -83,3 +83,16 @@ def test_invalid_pagination_arguments_are_rejected():
 
     with pytest.raises(ValueError):
         paginate_work_items([], filter_name="bad")
+
+
+def test_in_progress_filter_separates_started_actionable_items():
+    values = [
+        item("open", EmailType.ACTION),
+        item("started", EmailType.ACTION),
+        item("done", EmailType.ACTION, done=True),
+    ]
+    values[1] = values[1].model_copy(update={"in_progress": True})
+
+    assert [x.thread_id for x in paginate_work_items(values, filter_name="action").items] == ["open"]
+    assert [x.thread_id for x in paginate_work_items(values, filter_name="in_progress").items] == ["started"]
+    assert [x.thread_id for x in paginate_work_items(values, filter_name="done").items] == ["done"]

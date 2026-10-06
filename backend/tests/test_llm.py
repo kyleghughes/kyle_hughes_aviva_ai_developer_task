@@ -4,13 +4,16 @@ import urllib.error
 import pytest
 
 from app.llm import EmailLLM, LLMUnavailable
+from app.models import Priority
 
 
 def test_classify_parses_valid_json(monkeypatch):
     llm = EmailLLM()
-    payload = {"topic": "claim", "actions": ["Review"], "urgency_signals": [], "importance_signals": [], "summary": "S", "confidence": .8, "rationale": "R"}
+    payload = {"topic": "claim", "actions": ["Review"], "urgency_signals": [], "importance_signals": [], "priority": "high", "summary": "S", "confidence": .8, "rationale": "R"}
     monkeypatch.setattr(llm, "_chat", lambda *args, **kwargs: json.dumps(payload))
-    assert llm.classify("email").topic == "claim"
+    decision = llm.classify("email")
+    assert decision.topic == "claim"
+    assert decision.priority is Priority.HIGH
 
 
 def test_classify_rejects_non_json(monkeypatch):

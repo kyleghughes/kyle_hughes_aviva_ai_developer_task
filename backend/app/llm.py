@@ -28,6 +28,7 @@ Return ONLY valid JSON matching this schema:
   "actions": ["specific action the handler appears to need to take"],
   "urgency_signals": ["explicit evidence of urgency from the email"],
   "importance_signals": ["explicit evidence of importance or impact from the email"],
+  "priority": "high|medium|low",
   "summary": "one or two sentence factual summary",
   "confidence": 0.0,
   "rationale": "brief evidence-based rationale"
@@ -35,7 +36,11 @@ Return ONLY valid JSON matching this schema:
 
 Rules:
 - Use only evidence in the supplied thread.
-- Only categorize into action, informational, or irrelevant.
+- Only categorize into action, informational, or irrelevant; the application handles that classification.
+- Assess priority as high, medium, or low using only evidence from the thread.
+- Use high only when there is a strong reason such as immediate customer impact, material financial impact, a clear urgent deadline, or a serious service issue.
+- Use medium when the matter is important but not clearly urgent.
+- Use low when the matter can reasonably wait.
 - Do not invent deadlines, policy decisions, facts, people, payments, actions, or commitments.
 - Only list an action when the email explicitly requests it or the next action is clearly required by the thread.
 - Urgency and importance signals must be grounded in explicit evidence. Empty arrays are valid.
@@ -326,12 +331,21 @@ class EmailLLM:
         """Return the system prompt for the requested Q&A mode."""
         if mode == "workload":
             system = """You support an insurance claims handler deciding what deserves attention.
-The evidence has already been classified by deterministic business rules as action,
-informational, or irrelevant. Do not invent a priority score or priority category.
-Use the evidence and any available urgency/importance signals to help the handler decide
-what to focus on. If an item has not been analysed by AI, say so rather than pretending
-that urgency or importance has been assessed. Cite thread IDs in square brackets.
-Never invent actions, deadlines, policy decisions, payments, people, or facts."""
+The evidence contains only currently open actionable work items; actioned and archived
+threads are excluded from this workload view. AI analysis may assess each analysed item
+as high, medium, or low priority. Use that assessed priority together with the supplied
+urgency/importance signals to help the handler decide what to focus on. The evidence is
+intentionally focused on the user's question and includes the latest message excerpt
+plus explicit evidence flags, so you can answer even when AI analysis has not yet run.
+For questions about urgent messages, identify work items marked as having explicit urgency
+language and refer to them by their exact WORK ITEM TITLE, explaining the evidence briefly.
+For questions about emails requiring a response, identify work items marked as likely
+requiring a response and refer to them by their exact WORK ITEM TITLE, explaining the request briefly.
+Do not claim a response or urgency unless the supplied evidence supports it. If an item
+has not been analysed by AI, do not invent an AI priority; use the conversation evidence
+instead. Never expose or cite THREAD REFERENCE values in the answer. When referring to a
+thread, use the exact WORK ITEM TITLE supplied in the evidence. Never invent actions,
+deadlines, policy decisions, payments, people, or facts."""
         else:
             system = """You are a mailbox assistant for an insurance claims handler.
 Use ONLY the supplied mailbox evidence and the conversation context. Answer naturally,

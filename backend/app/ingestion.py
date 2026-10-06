@@ -1,6 +1,6 @@
 from .llm import EmailLLM
 from .mailbox import JsonMailboxSource, format_thread
-from .models import LLMDecision, Thread, WorkItem
+from .models import EmailType, LLMDecision, Thread, WorkItem
 from .prioritisation import classify_thread
 from .repository import MailboxRepository
 
@@ -33,7 +33,7 @@ class IngestionService:
 
             self._ingest_thread(thread_id, thread, only_threads)
 
-            email_type, _ = classify_thread(thread.messages)
+            email_type = self.repo.work_items[thread_id].email_type
 
             counts["threads_processed"] += 1
             counts["messages_processed"] += len(thread.messages)
@@ -48,13 +48,17 @@ class IngestionService:
         only_threads: set[str] | None,
     ) -> None:
         """Classify, build and persist one thread's workload record."""
-        email_type, _ = classify_thread(thread.messages)
+        classified_type, _ = classify_thread(thread.messages)
+        email_type = self.repo.type_overrides.get(thread_id, classified_type)
         existing_decision = self.repo.decisions.get(thread_id)
 
         decision = self._get_existing_decision(
             existing_decision,
             only_threads,
+            email_type is EmailType.ACTION,
         )
+        if email_type is not EmailType.ACTION:
+            self.repo.invalidate_analysis(thread_id)
 
         work_item = self._build_work_item(
             thread_id=thread_id,
@@ -72,9 +76,10 @@ class IngestionService:
     def _get_existing_decision(
         decision: LLMDecision | None,
         only_threads: set[str] | None,
+        actionable: bool,
     ) -> LLMDecision | None:
-        """Keep existing AI analysis during normal ingestion."""
-        if decision is not None and only_threads is None:
+        """Keep existing AI analysis only for actionable threads."""
+        if decision is not None and only_threads is None and actionable:
             return decision
 
         return None
@@ -103,6 +108,11 @@ class IngestionService:
             actions=decision.actions if decision else [],
             urgency_signals=decision.urgency_signals if decision else [],
             importance_signals=decision.importance_signals if decision else [],
+            priority=(
+                self.repo.priority_overrides.get(thread_id, decision.priority)
+                if decision
+                else None
+            ),
             summary=(
                 decision.summary
                 if decision
@@ -116,7 +126,9 @@ class IngestionService:
             ),
             message_count=len(thread.messages),
             importance_flag=latest.importance_flag,
-            done=thread_id in self.repo.done_thread_ids,
+            done=(thread_id in self.repo.done_thread_ids) and email_type is EmailType.ACTION,
+            in_progress=(thread_id in self.repo.in_progress_thread_ids) and email_type is EmailType.ACTION and thread_id not in self.repo.done_thread_ids,
+            pinned=thread_id in self.repo.pinned_thread_ids,
         )
 
     @staticmethod
@@ -136,6 +148,9 @@ class IngestionService:
 
         if thread is None:
             raise KeyError(thread_id)
+
+        if self.repo.work_items[thread_id].email_type.value != "action":
+            raise ValueError("AI analysis is only available for actionable emails.")
 
         decision = self.llm.classify(format_thread(thread))
         self.repo.save_decision(thread_id, decision)

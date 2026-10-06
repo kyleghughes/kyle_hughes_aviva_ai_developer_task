@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.models import Email, EmailType, WorkItem
+from app.models import Email, EmailType, Priority, WorkItem
 from app.prioritisation import count_work_items, classify_thread, sort_work_items
 
 
@@ -21,6 +21,7 @@ def work_item(
     kind: EmailType,
     days: int = 0,
     done: bool = False,
+    priority: Priority | None = None,
 ) -> WorkItem:
     return WorkItem(
         thread_id=thread_id,
@@ -30,6 +31,7 @@ def work_item(
         email_type=kind,
         message_count=1,
         done=done,
+        priority=priority,
     )
 
 
@@ -44,6 +46,17 @@ def test_sort_is_deterministic_and_done_items_are_last():
     assert [x.thread_id for x in sort_work_items(values)] == ["a", "i", "r", "d"]
 
 
+def test_high_priority_items_sort_to_the_top_before_work_type():
+    values = [
+        work_item("i", EmailType.INFORMATIONAL, priority=Priority.LOW),
+        work_item("a", EmailType.ACTION, priority=Priority.MEDIUM),
+        work_item("h", EmailType.INFORMATIONAL, priority=Priority.HIGH),
+        work_item("u", EmailType.ACTION),
+    ]
+
+    assert [x.thread_id for x in sort_work_items(values)] == ["h", "a", "i", "u"]
+
+
 def test_counts_cover_open_and_done_states():
     values = [
         work_item("a", EmailType.ACTION),
@@ -54,10 +67,12 @@ def test_counts_cover_open_and_done_states():
 
     assert count_work_items(values) == {
         "action": 1,
+        "archive": 2,
         "informational": 1,
         "irrelevant": 1,
         "done": 1,
-        "pending": 3,
+        "in_progress": 0,
+        "pending": 1,
     }
 
 
@@ -94,3 +109,13 @@ def test_non_action_relevant_mail_is_informational():
     result, reasons = classify_thread([email("The claimant has supplied additional context.")])
     assert result is EmailType.INFORMATIONAL
     assert "Relevant mailbox" in reasons[0]
+
+
+def test_pinned_items_sort_before_unpinned_items():
+    values = [
+        work_item("normal", EmailType.ACTION, priority=Priority.HIGH),
+        work_item("pinned", EmailType.ACTION, priority=Priority.LOW),
+    ]
+    values[1] = values[1].model_copy(update={"pinned": True})
+
+    assert [x.thread_id for x in sort_work_items(values)] == ["pinned", "normal"]

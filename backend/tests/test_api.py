@@ -1,19 +1,20 @@
 from fastapi.testclient import TestClient
 
 from app.api import create_app
+from app.models import EmailType, LLMDecision, Priority
 
 
 def test_work_items_endpoint_supports_search_and_pagination(service):
     app = create_app(service)
     with TestClient(app) as client:
-        response = client.get("/api/work-items?page=1&page_size=5")
+        response = client.get("/api/work-items?filter=action&page=1&page_size=5")
         assert response.status_code == 200
         data = response.json()
         assert len(data["items"]) == 5
-        assert data["total"] == 50
-        assert data["total_pages"] == 10
+        assert data["total"] == 30
+        assert data["total_pages"] == 6
 
-        search = client.get("/api/work-items?q=PIN-HOM-501772&page_size=10")
+        search = client.get("/api/work-items?q=PIN-HOM-501772&filter=archive&page_size=10")
         assert search.status_code == 200
         assert search.json()["total"] == 1
 
@@ -32,6 +33,11 @@ def test_done_and_incomplete_endpoints(service):
     thread_id = next(iter(service.repo.work_items))
     app = create_app(service)
     with TestClient(app) as client:
+        blocked = client.post(f"/api/work-items/{thread_id}/done")
+        assert blocked.status_code == 409
+        started = client.post(f"/api/work-items/{thread_id}/in-progress")
+        assert started.status_code == 200
+        assert started.json()["in_progress"] is True
         done = client.post(f"/api/work-items/{thread_id}/done")
         assert done.status_code == 200
         assert done.json()["done"] is True
@@ -120,3 +126,80 @@ def test_invalid_filter_is_rejected(service):
     app = create_app(service)
     with TestClient(app) as client:
         assert client.get("/api/work-items?filter=unknown").status_code == 422
+
+
+def test_type_change_moves_between_actionable_and_archive(service):
+    service.ingest()
+    app = create_app(service)
+    with TestClient(app) as client:
+        thread_id = client.get("/api/work-items?filter=action&page_size=100").json()["items"][0]["thread_id"]
+
+        moved = client.post(
+            f"/api/work-items/{thread_id}/type",
+            json={"email_type": "irrelevant"},
+        )
+        assert moved.status_code == 200
+        assert moved.json()["email_type"] == "irrelevant"
+        assert moved.json()["priority"] is None
+
+        archived = client.get("/api/work-items?filter=archive&page_size=100").json()["items"]
+        assert any(item["thread_id"] == thread_id for item in archived)
+
+        restored = client.post(
+            f"/api/work-items/{thread_id}/type",
+            json={"email_type": "action"},
+        )
+        assert restored.status_code == 200
+        assert restored.json()["email_type"] == "action"
+
+
+def test_non_actionable_threads_cannot_be_actioned(service):
+    service.ingest()
+    app = create_app(service)
+    with TestClient(app) as client:
+        thread_id = client.get("/api/work-items?filter=archive&page_size=100").json()["items"][0]["thread_id"]
+        response = client.post(f"/api/work-items/{thread_id}/done")
+        assert response.status_code == 409
+
+
+def test_in_progress_endpoint_and_filter(service):
+    service.ingest()
+    thread_id = next(iter(service.repo.work_items))
+    app = create_app(service)
+    with TestClient(app) as client:
+        started = client.post(f"/api/work-items/{thread_id}/in-progress")
+        assert started.status_code == 200
+        assert started.json()["in_progress"] is True
+        response = client.get("/api/work-items?filter=in_progress&page_size=100")
+        assert response.status_code == 200
+        assert thread_id in {item["thread_id"] for item in response.json()["items"]}
+
+
+def test_pin_and_unpin_endpoints(service):
+    service.ingest()
+    thread_id = next(iter(service.repo.work_items))
+    app = create_app(service)
+    with TestClient(app) as client:
+        pinned = client.post(f"/api/work-items/{thread_id}/pin")
+        assert pinned.status_code == 200
+        assert pinned.json()["pinned"] is True
+
+        unpinned = client.post(f"/api/work-items/{thread_id}/unpin")
+        assert unpinned.status_code == 200
+        assert unpinned.json()["pinned"] is False
+
+
+def test_priority_override_endpoint_requires_analysis_and_updates_priority(service, monkeypatch):
+    service.ingest()
+    client_thread_id = next(item.thread_id for item in service.repo.work_items.values() if item.email_type is EmailType.ACTION)
+    decision = LLMDecision(topic="claim", summary="S", rationale="R", confidence=.7, priority=Priority.HIGH)
+    monkeypatch.setattr(service.ingestion, "analyze_thread", lambda _: decision)
+    app = create_app(service)
+    with TestClient(app) as client:
+        blocked = client.post(f"/api/work-items/{client_thread_id}/priority", json={"priority": "low"})
+        assert blocked.status_code == 409
+        client.post(f"/api/work-items/{client_thread_id}/analyze")
+        service.repo.save_decision(client_thread_id, decision)
+        updated = client.post(f"/api/work-items/{client_thread_id}/priority", json={"priority": "low"})
+        assert updated.status_code == 200
+        assert updated.json()["priority"] == "low"

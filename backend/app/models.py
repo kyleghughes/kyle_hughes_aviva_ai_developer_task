@@ -12,6 +12,14 @@ class EmailType(str, Enum):
     IRRELEVANT = "irrelevant"
 
 
+class Priority(str, Enum):
+    """AI-assessed workload priority."""
+
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
 class Attachment(BaseModel):
     """Email attachment metadata."""
 
@@ -48,6 +56,7 @@ class LLMDecision(BaseModel):
     actions: list[str] = Field(default_factory=list)
     urgency_signals: list[str] = Field(default_factory=list)
     importance_signals: list[str] = Field(default_factory=list)
+    priority: Priority
     summary: str
     confidence: float = Field(ge=0, le=1)
     rationale: str
@@ -65,12 +74,27 @@ class WorkItem(BaseModel):
     actions: list[str] = Field(default_factory=list)
     urgency_signals: list[str] = Field(default_factory=list)
     importance_signals: list[str] = Field(default_factory=list)
+    priority: Priority | None = None
     summary: str = "Awaiting AI analysis when opened."
     confidence: float | None = None
     analysis_status: str = "not_analyzed"
     message_count: int
     importance_flag: str | None = None
     done: bool = False
+    in_progress: bool = False
+    pinned: bool = False
+
+
+class WorkTypeUpdate(BaseModel):
+    """User-selected workflow category override."""
+
+    email_type: EmailType
+
+
+class PriorityUpdate(BaseModel):
+    """User-selected priority override after AI analysis."""
+
+    priority: Priority
 
 
 class IngestResponse(BaseModel):
@@ -112,6 +136,7 @@ class AskResponse(BaseModel):
 
     answer: str
     thread_ids: list[str]
+    thread_titles: dict[str, str] = Field(default_factory=dict)
     caveats: list[str] = Field(default_factory=list)
     suggested_questions: list[str] = Field(
         default_factory=list,

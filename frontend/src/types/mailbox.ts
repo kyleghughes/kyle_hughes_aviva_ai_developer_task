@@ -1,6 +1,7 @@
 export type EmailType = "action" | "informational" | "irrelevant";
-export type Filter = "all" | EmailType | "done";
+export type Filter = "action" | "in_progress" | "archive" | "done";
 export type AnalysisStatus = "analyzed" | "not_analyzed";
+export type Priority = "high" | "medium" | "low";
 
 export type Item = {
   thread_id: string;
@@ -12,19 +13,24 @@ export type Item = {
   actions: string[];
   urgency_signals: string[];
   importance_signals: string[];
+  priority: Priority | null;
   summary: string;
   confidence: number | null;
   analysis_status: AnalysisStatus;
   message_count: number;
   importance_flag?: string | null;
   done: boolean;
+  in_progress: boolean;
+  pinned: boolean;
 };
 
 export type WorkloadCounts = {
   action: number;
+  archive: number;
   informational: number;
   irrelevant: number;
   done: number;
+  in_progress: number;
   pending: number;
 };
 
@@ -57,6 +63,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   threadIds?: string[];
+  threadTitles?: Record<string, string>;
   suggestedQuestions?: string[];
 };
 
@@ -73,6 +80,7 @@ export type ChatSession = {
 export type Ask = {
   answer: string;
   thread_ids: string[];
+  thread_titles: Record<string, string>;
   caveats: string[];
   suggested_questions: string[];
 };

@@ -1,6 +1,6 @@
 import os
 
-from .models import Email, EmailType, WorkItem
+from .models import Email, EmailType, Priority, WorkItem
 
 
 RULE_VERSION = "work-type-v1"
@@ -9,6 +9,12 @@ WORK_TYPE_ORDER = {
     EmailType.ACTION: 0,
     EmailType.INFORMATIONAL: 1,
     EmailType.IRRELEVANT: 2,
+}
+
+PRIORITY_ORDER = {
+    Priority.HIGH: 0,
+    Priority.MEDIUM: 1,
+    Priority.LOW: 2,
 }
 
 
@@ -164,12 +170,13 @@ def classify_thread(
     )
 
 def sort_work_items(items: list[WorkItem]) -> list[WorkItem]:
-    """Sort work using deterministic business workload rules."""
+    """Sort actionable work by AI priority, then actioned items by date."""
     return sorted(
         items,
         key=lambda item: (
             1 if item.done else 0,
-            WORK_TYPE_ORDER[item.email_type],
+            0 if item.pinned else 1,
+            PRIORITY_ORDER.get(item.priority, 3),
             -item.latest_date.timestamp(),
             item.thread_id,
         ),
@@ -179,21 +186,11 @@ def sort_work_items(items: list[WorkItem]) -> list[WorkItem]:
 def count_work_items(items: list[WorkItem]) -> dict[str, int]:
     """Return workload counts used by the UI."""
     return {
-        "action": sum(
-            not item.done and item.email_type is EmailType.ACTION
-            for item in items
-        ),
-        "informational": sum(
-            not item.done and item.email_type is EmailType.INFORMATIONAL
-            for item in items
-        ),
-        "irrelevant": sum(
-            not item.done and item.email_type is EmailType.IRRELEVANT
-            for item in items
-        ),
+        "action": sum(not item.done and item.email_type is EmailType.ACTION for item in items),
+        "archive": sum(not item.done and item.email_type is not EmailType.ACTION for item in items),
+        "informational": sum(not item.done and item.email_type is EmailType.INFORMATIONAL for item in items),
+        "irrelevant": sum(not item.done and item.email_type is EmailType.IRRELEVANT for item in items),
         "done": sum(item.done for item in items),
-        "pending": sum(
-            not item.done and item.analysis_status != "analyzed"
-            for item in items
-        ),
+        "in_progress": sum(item.in_progress and not item.done and item.email_type is EmailType.ACTION for item in items),
+        "pending": sum(not item.done and item.email_type is EmailType.ACTION and item.analysis_status != "analyzed" for item in items),
     }

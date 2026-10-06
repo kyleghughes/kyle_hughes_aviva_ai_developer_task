@@ -1,10 +1,11 @@
+import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
 import Stack from "@mui/material/Stack";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import { Mail, Moon, RefreshCw, Sun } from "lucide-react";
+import { Moon, RefreshCw, Sun } from "lucide-react";
 
 // #region props interface
 export interface AppHeaderProps {
@@ -43,17 +44,25 @@ export const AppHeader = ({
       <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
         <Box
           sx={{
-            width: 36,
-            height: 36,
-            flexShrink: 0,
+            px: 1.25,
+            py: 0.75,
+            bgcolor: "white",
             borderRadius: 1,
-            bgcolor: "#F7C948",
-            color: "#003B5C",
-            display: "grid",
-            placeItems: "center",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
           }}
         >
-          <Mail size={20} />
+          <Box
+            component="img"
+            src="/aviva-logo.png"
+            alt="Aviva"
+            sx={{
+              width: { xs: 92, sm: 108 },
+              height: "auto",
+              display: "block",
+            }}
+          />
         </Box>
         <Box minWidth={0}>
           <Typography fontWeight={800} fontSize={16}>
@@ -101,8 +110,39 @@ export const AppHeader = ({
             "&:hover": { bgcolor: "#E6B836" },
           }}
         >
-          Refresh
+          Resync
         </Button>
+        <Stack
+          direction="row"
+          spacing={1}
+          alignItems="center"
+          sx={{
+            pl: 1.25,
+            ml: 0.25,
+            borderLeft: "1px solid rgba(255,255,255,.18)",
+          }}
+        >
+          <Avatar
+            sx={{
+              width: 34,
+              height: 34,
+              bgcolor: "#F7C948",
+              color: "#003B5C",
+              fontSize: 13,
+              fontWeight: 800,
+            }}
+          >
+            AM
+          </Avatar>
+          <Box sx={{ display: { xs: "none", md: "block" } }}>
+            <Typography fontSize={12} fontWeight={800} lineHeight={1.2}>
+              Alex Morgan
+            </Typography>
+            <Typography fontSize={10} sx={{ color: "rgba(255,255,255,.68)" }}>
+              Claims Handler
+            </Typography>
+          </Box>
+        </Stack>
       </Stack>
     </Box>
   );

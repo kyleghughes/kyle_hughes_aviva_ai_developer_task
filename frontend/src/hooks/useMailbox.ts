@@ -3,11 +3,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   analyzeWorkItem,
   askMailbox,
+  setWorkItemType,
+  setWorkItemPriority,
   getThread,
   getWorkItems,
   ingestMailbox,
   markWorkItemDone,
+  markWorkItemInProgress,
   markWorkItemIncomplete,
+  pinWorkItem,
+  unpinWorkItem,
 } from "../api/mailboxApi";
 
 import type {
@@ -26,8 +31,8 @@ const PAGE_SIZE: number = 10;
  * Coordinates mailbox data, UI state and mailbox actions.
  *
  * The hook keeps API calls and state transitions out of the presentation
- * components. Business workload decisions remain deterministic; AI is used
- * for decision support and natural-language questions.
+ * components. Workflow classification remains deterministic; AI is used for
+ * decision support, including thread priority assessment, and Q&A.
  *
  * @returns Mailbox data, UI state and actions required by the workload UI.
  */
@@ -36,16 +41,18 @@ export const useMailbox = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [counts, setCounts] = useState<WorkloadCounts>({
     action: 0,
+    archive: 0,
     informational: 0,
     irrelevant: 0,
     done: 0,
+    in_progress: 0,
     pending: 0,
   });
   const [total, setTotal] = useState<number>(0);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [page, setPage] = useState<number>(1);
   const [search, setSearch] = useState<string>("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("action");
   const [status, setStatus] = useState<string>("Loading mailbox…");
   const [selected, setSelected] = useState<Item | null>(null);
   const [selectedThread, setSelectedThread] = useState<Thread | null>(null);
@@ -103,7 +110,7 @@ export const useMailbox = () => {
    */
   useEffect(() => {
     const loadInitialMailbox = async (): Promise<void> => {
-      await load(1, "", "all");
+      await load(1, "", "action");
     };
 
     void loadInitialMailbox();
@@ -201,7 +208,7 @@ export const useMailbox = () => {
     }
 
     // Avoid making the same AI request every time the thread is opened.
-    if (item.analysis_status === "analyzed") {
+    if (item.email_type !== "action" || item.analysis_status === "analyzed") {
       return;
     }
 
@@ -211,20 +218,23 @@ export const useMailbox = () => {
     try {
       const result = await analyzeWorkItem(item.thread_id);
 
-      setItems((current: Item[]) =>
-        current.map((entry: Item) =>
-          entry.thread_id === item.thread_id ? result.work_item : entry,
-        ),
-      );
-
       setSelected(result.work_item);
-      setStatus("AI decision support complete");
+
+      // Priority is assessed by AI, so refresh the current workload ordering.
+      // A high-priority item should immediately move to the top of the queue.
+      const targetPage = result.work_item.priority === "high" ? 1 : page;
+      await load(targetPage, search, filter);
+      setStatus(
+        result.work_item.priority === "high"
+          ? "AI assessed high priority — moved to top of workload"
+          : "AI decision support complete",
+      );
     } catch (error: unknown) {
       setStatus(error instanceof Error ? error.message : "AI analysis failed.");
     } finally {
       setAnalyzing(false);
     }
-  }, []);
+  }, [filter, load, page, search]);
 
   /**
    * Marks a work item as done or reopens it.
@@ -235,6 +245,22 @@ export const useMailbox = () => {
    * @param done `true` to mark the item done, `false` to reopen it.
    * @returns Resolves when the work item and current workload have been updated.
    */
+  const setInProgress = useCallback(
+    async (item: Item): Promise<void> => {
+      try {
+        const updated = await markWorkItemInProgress(item.thread_id);
+        setSelected((current) => current?.thread_id === item.thread_id ? updated : current);
+        setFilter("in_progress");
+        setPage(1);
+        await load(1, search, "in_progress");
+        setStatus("Work item marked in progress");
+      } catch (error: unknown) {
+        setStatus(error instanceof Error ? error.message : "Unable to start work item.");
+      }
+    },
+    [load, search],
+  );
+
   const setDoneState = useCallback(
     async (item: Item, done: boolean): Promise<void> => {
       try {
@@ -246,9 +272,12 @@ export const useMailbox = () => {
           current?.thread_id === item.thread_id ? updated : current,
         );
 
-        await load(page, search, filter);
+        const nextFilter: Filter = done ? "done" : "in_progress";
+        setFilter(nextFilter);
+        setPage(1);
+        await load(1, search, nextFilter);
 
-        setStatus(done ? "Work item marked done" : "Work item reopened");
+        setStatus(done ? "Work item marked actioned" : "Work item reopened and returned to In Progress");
       } catch (error: unknown) {
         setStatus(
           error instanceof Error
@@ -258,6 +287,80 @@ export const useMailbox = () => {
       }
     },
     [filter, load, page, search],
+  );
+
+  const setPinned = useCallback(
+    async (item: Item, pinned: boolean): Promise<void> => {
+      try {
+        const updated = pinned
+          ? await pinWorkItem(item.thread_id)
+          : await unpinWorkItem(item.thread_id);
+        setSelected((current) => current?.thread_id === item.thread_id ? updated : current);
+        await load(page, search, filter);
+        setStatus(pinned ? "Thread pinned" : "Thread unpinned");
+      } catch (error: unknown) {
+        setStatus(error instanceof Error ? error.message : "Unable to update pin.");
+      }
+    },
+    [filter, load, page, search],
+  );
+
+  const setPriority = useCallback(
+    async (item: Item, priority: "high" | "medium" | "low"): Promise<void> => {
+      try {
+        const updated = await setWorkItemPriority(item.thread_id, priority);
+        setSelected(updated);
+        await load(page, search, filter);
+        setStatus(`Priority manually changed to ${priority}`);
+      } catch (error: unknown) {
+        setStatus(error instanceof Error ? error.message : "Unable to change priority.");
+      }
+    },
+    [filter, load, page, search],
+  );
+
+  const setEmailType = useCallback(
+    async (item: Item, emailType: "action" | "informational" | "irrelevant"): Promise<void> => {
+      try {
+        const updated = await setWorkItemType(item.thread_id, emailType);
+        const nextFilter: Filter = emailType === "action" ? "action" : "archive";
+        setFilter(nextFilter);
+        setPage(1);
+
+        if (emailType === "action") {
+          // A thread returning from the archive must receive fresh AI decision
+          // support. Do not rely on the previously selected item's state: the
+          // category change deliberately invalidates any old analysis.
+          setSelected(updated);
+          setAnalyzing(true);
+          setStatus("Re-analysing selected email with Ollama…");
+
+          try {
+            const result = await analyzeWorkItem(item.thread_id);
+            setSelected(result.work_item);
+            await load(1, search, "action");
+            setStatus(
+              result.work_item.priority === "high"
+                ? "AI assessed high priority — moved to top of workload"
+                : "Thread moved to actionable and AI analysis complete",
+            );
+          } finally {
+            setAnalyzing(false);
+          }
+          return;
+        }
+
+        setSelected(updated);
+        await load(1, search, "archive");
+        setStatus(
+          `Thread moved to ${emailType === "informational" ? "informational" : "irrelevant"} archive`,
+        );
+      } catch (error: unknown) {
+        setAnalyzing(false);
+        setStatus(error instanceof Error ? error.message : "Unable to change thread category.");
+      }
+    },
+    [load, search],
   );
 
   /**
@@ -371,7 +474,11 @@ export const useMailbox = () => {
     // Actions
     refresh,
     openItem,
+    setInProgress,
     setDoneState,
+    setEmailType,
+    setPriority,
+    setPinned,
     closeDrawer,
     ask,
   };

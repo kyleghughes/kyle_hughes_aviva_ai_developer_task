@@ -268,6 +268,7 @@ const ChatPopper = ({
         role: "assistant",
         content: result.answer,
         threadIds: result.thread_ids,
+        threadTitles: result.thread_titles,
         suggestedQuestions: result.suggested_questions,
       };
 

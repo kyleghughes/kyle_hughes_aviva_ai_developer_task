@@ -65,9 +65,18 @@ export const ChatConversation = ({
               {message.threadIds.map((id) => (
                 <Chip
                   key={id}
-                  label={id}
+                  label={message.threadTitles?.[id] ?? id}
+                  title={message.threadTitles?.[id] ?? id}
                   size="small"
-                  sx={{ height: 20, fontSize: 9 }}
+                  sx={{
+                    height: 24,
+                    fontSize: 10,
+                    maxWidth: 420,
+                    "& .MuiChip-label": {
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    },
+                  }}
                 />
               ))}
             </Stack>

@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   Filter,
   Item,
+  Priority,
   ThreadResponse,
   WorkItemPage,
 } from "../types/mailbox";
@@ -89,7 +90,7 @@ export const getWorkItems = async (
    */
   const params = new URLSearchParams({
     q: options.query ?? "",
-    filter: options.filter ?? "all",
+    filter: options.filter ?? "action",
     page: String(options.page ?? 1),
     page_size: String(options.pageSize ?? 10),
   });
@@ -175,9 +176,11 @@ export const getThread = async (threadId: string): Promise<ThreadResponse> => {
  * - required actions
  * - evidence of urgency
  * - evidence of importance
+ * - AI-assessed priority (high, medium or low)
  * - confidence and rationale
  *
- * The LLM does not determine the application's workload priority.
+ * The deterministic application rules still determine the workflow type; the
+ * LLM provides an additional priority assessment from the thread evidence.
  *
  * @param threadId Unique identifier of the thread to analyse.
  * @returns The updated work item containing its AI analysis.
@@ -276,6 +279,15 @@ export const askMailbox = async (
  * @returns The updated work item.
  * @throws Error if the backend cannot update the item.
  */
+export const markWorkItemInProgress = async (threadId: string): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/in-progress`, { method: "POST" });
+  if (!response.ok) {
+    const errorMessage = await parseError(response, "Unable to mark work item in progress.");
+    throw new Error(errorMessage);
+  }
+  return response.json();
+};
+
 export const markWorkItemDone = async (threadId: string): Promise<Item> => {
   const response = await fetch(`${API}/work-items/${threadId}/done`, {
     method: "POST",
@@ -319,5 +331,47 @@ export const markWorkItemIncomplete = async (
     throw new Error(errorMessage);
   }
 
+  return response.json();
+};
+
+export const pinWorkItem = async (threadId: string): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/pin`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to pin thread."));
+  }
+  return response.json();
+};
+
+export const unpinWorkItem = async (threadId: string): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/unpin`, { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to unpin thread."));
+  }
+  return response.json();
+};
+
+export const setWorkItemType = async (
+  threadId: string,
+  emailType: "action" | "informational" | "irrelevant",
+): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/type`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email_type: emailType }),
+  });
+  if (!response.ok) throw new Error(await parseError(response, "Unable to change thread category."));
+  return response.json();
+};
+
+export const setWorkItemPriority = async (
+  threadId: string,
+  priority: Priority,
+): Promise<Item> => {
+  const response = await fetch(`${API}/work-items/${threadId}/priority`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ priority }),
+  });
+  if (!response.ok) throw new Error(await parseError(response, "Unable to change priority."));
   return response.json();
 };
